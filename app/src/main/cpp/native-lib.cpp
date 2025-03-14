@@ -12,23 +12,23 @@ mbedtls_ctr_drbg_context ctr_drbg;
 char *personalization = "fclient-sample-app";
 
 #define LOG_INFO(...) __android_log_print(ANDROID_LOG_INFO, "fclient_ndk", __VA_ARGS__)
-
+#define LOG_ERROR(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 #define SLOG_INFO(...) android_logger->info( __VA_ARGS__ )
 auto android_logger = spdlog::android_logger_mt("android", "fclient_ndk");
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_ru_iu3_fclient_MainActivity_stringFromJNI(JNIEnv *env, jobject /* this */) {
     std::string hello = "Hello from C++";
-    LOG_INFO("Hello from c++ %d", 2023);
-    SLOG_INFO("Hello from spdlog {0}", 2023);
+    LOG_INFO("Hello from c++ %d", 2025);
+    SLOG_INFO("Hello from spdlog {0}", 2025);
     return env->NewStringUTF(hello.c_str());
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_ru_iu3_fclient_MainActivity_initRng(JNIEnv *env, jclass clazz) {
+    LOG_INFO("initRng", 2025);
     mbedtls_entropy_init(&entropy);
     mbedtls_ctr_drbg_init(&ctr_drbg);
-
     return mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
                                  (const unsigned char *) personalization,
                                  strlen(personalization));
@@ -36,6 +36,7 @@ Java_ru_iu3_fclient_MainActivity_initRng(JNIEnv *env, jclass clazz) {
 
 extern "C" JNIEXPORT jbyteArray JNICALL
 Java_ru_iu3_fclient_MainActivity_randomBytes(JNIEnv *env, jclass, jint no) {
+    LOG_INFO("randomBytes, no=%d", no);
     uint8_t *buf = new uint8_t[no];
     mbedtls_ctr_drbg_random(&ctr_drbg, buf, no);
     jbyteArray rnd = env->NewByteArray(no);
@@ -135,6 +136,7 @@ void releaseEnv(bool detach, JNIEnv *env) {
     }
 }
 
+
 extern "C"
 JNIEXPORT jboolean JNICALL
 Java_ru_iu3_fclient_MainActivity_transaction(JNIEnv *xenv, jobject xthiz, jbyteArray xtrd) {
@@ -146,6 +148,8 @@ Java_ru_iu3_fclient_MainActivity_transaction(JNIEnv *xenv, jobject xthiz, jbyteA
         jclass cls = env->GetObjectClass(thiz);
         jmethodID id = env->GetMethodID(
                 cls, "enterPin", "(ILjava/lang/String;)Ljava/lang/String;");
+
+        //TRD 9F0206000000000100 = amount = 1р
         uint8_t *p = (uint8_t *) env->GetByteArrayElements(trd, 0);
         jsize sz = env->GetArrayLength(trd);
         if ((sz != 9) || (p[0] != 0x9F) || (p[1] != 0x02) || (p[2] != 0x06))
@@ -160,17 +164,14 @@ Java_ru_iu3_fclient_MainActivity_transaction(JNIEnv *xenv, jobject xthiz, jbyteA
         jstring jamount = (jstring) env->NewStringUTF(buf);
         int ptc = 3;
         while (ptc > 0) {
-
             jstring pin = (jstring) env->CallObjectMethod(thiz, id, ptc, jamount);
             const char *utf = env->GetStringUTFChars(pin, nullptr);
             env->ReleaseStringUTFChars(pin, utf);
-            if ((utf != nullptr) && (strcmp(utf, "1234") == 0))
-                break;
+            if ((utf != nullptr) && (strcmp(utf, "1234") == 0)) break;
             ptc--;
         }
         id = env->GetMethodID(cls, "transactionResult", "(Z)V");
         env->CallVoidMethod(thiz, id, ptc > 0);
-
         env->ReleaseByteArrayElements(trd, (jbyte *) p, 0);
         env->DeleteGlobalRef(thiz);
         env->DeleteGlobalRef(trd);
